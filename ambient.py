@@ -52,33 +52,28 @@ def get_average_color(frame, min_saturation=40, boost=1.2):
 
     return tuple(map(int, avg))
 
-def start_ffmpeg_capture(width=1920, height=1080, display=":0.0"):
+def start_wfrecorder_capture(width=1920, height=1080):
     cmd = [
-        "ffmpeg",
-        "-f", "x11grab",
-        "-video_size", f"{width}x{height}",
-        "-i", display,
-        "-pix_fmt", "bgr24",
-        "-vcodec", "rawvideo",
-        "-an", "-sn",
-        "-f", "rawvideo",
-        "-"
+        "wf-recorder",
+        "-f", "-",             # write raw video to stdout
+        "-c", "rawvideo",
+        "-xrgb"                # use XRGB pixel format
     ]
-    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL), width, height
 
-ffmpeg_proc = start_ffmpeg_capture()
-frame_width, frame_height = 1920, 1080
+wf_proc, frame_width, frame_height = start_wfrecorder_capture()
 
 last_sent = 0
 while True:
     try:
-        raw_frame = ffmpeg_proc.stdout.read(frame_width * frame_height * 3)
+        raw_frame = wf_proc.stdout.read(frame_width * frame_height * 4)  # XRGB = 4 bytes per pixel
         if not raw_frame:
-            log("No frame received from ffmpeg")
+            log("No frame received from wf-recorder")
             time.sleep(1)
             continue
 
-        frame = np.frombuffer(raw_frame, np.uint8).reshape((frame_height, frame_width, 3))
+        frame = np.frombuffer(raw_frame, np.uint8).reshape((frame_height, frame_width, 4))
+        frame = frame[:, :, :3]  # drop alpha channel
     except Exception:
         log("Error reading frame:\n" + traceback.format_exc())
         time.sleep(2)
