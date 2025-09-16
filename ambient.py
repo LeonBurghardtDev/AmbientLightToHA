@@ -2,15 +2,15 @@ import cv2
 import numpy as np
 import requests
 import time
-import mss
 import os
 import traceback
+from PIL import ImageGrab  
 
 HA_URL = os.environ.get("HA_URL")
 HA_TOKEN = os.environ.get("HA_TOKEN")
 
 if not HA_URL or not HA_TOKEN:
-    raise ValueError("Bitte HA_URL und HA_TOKEN als Umgebungsvariablen setzen.")
+    raise ValueError("HA_URL or HA_TOKEN not set.")
 
 headers = {
     "Authorization": f"Bearer {HA_TOKEN}",
@@ -36,7 +36,7 @@ def send_to_ha(r, g, b):
     try:
         requests.post(HA_URL, headers=headers, json=data, timeout=2)
     except Exception:
-        log("Fehler beim Senden:\n" + traceback.format_exc())
+        log("Error sending data:\n" + traceback.format_exc())
 
 def get_average_color(frame, min_saturation=40, boost=1.2):
     small = cv2.resize(frame, (160, 90))
@@ -52,27 +52,20 @@ def get_average_color(frame, min_saturation=40, boost=1.2):
 
     return tuple(map(int, avg)) 
 
-def get_screen():
-    while True:
-        try:
-            sct = mss.mss()
-            monitor = sct.monitors[1] 
-            log("Display gefunden")
-            return sct, monitor
-        except Exception:
-            log("Kein Display:\n" + traceback.format_exc())
-            time.sleep(5)
-
-sct, monitor = get_screen()
+def grab_frame():
+    try:
+        img = ImageGrab.grab() 
+        frame = np.array(img)[:, :, ::-1] 
+        return frame
+    except Exception:
+        log("Error creating Screenshot:\n" + traceback.format_exc())
+        return None
 
 last_sent = 0
 while True:
-    try:
-        screenshot = np.array(sct.grab(monitor))
-        frame = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
-    except Exception:
-        log("Fehler beim Grabben:\n" + traceback.format_exc())
-        sct, monitor = get_screen()
+    frame = grab_frame()
+    if frame is None:
+        time.sleep(2)
         continue
 
     b, g, r = get_average_color(frame)
@@ -80,4 +73,4 @@ while True:
     if time.time() - last_sent > 1:
         send_to_ha(r, g, b)
         last_sent = time.time()
-        log(f"Gesendet: R={r}, G={g}, B={b}")
+        log(f"Send: R={r}, G={g}, B={b}")
