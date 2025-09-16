@@ -52,28 +52,32 @@ def get_average_color(frame, min_saturation=40, boost=1.2):
 
     return tuple(map(int, avg))
 
-def start_wfrecorder_capture(width=1920, height=1080):
+def start_pipewire_capture(width=1280, height=800):
     cmd = [
-        "wf-recorder",
-        "-f", "-",             # write raw video to stdout
-        "-c", "rawvideo",
-        "-xrgb"                # use XRGB pixel format
+        "ffmpeg",
+        "-f", "pipewire",
+        "-i", "0",
+        "-pix_fmt", "bgr0",
+        "-vcodec", "rawvideo",
+        "-an", "-sn",
+        "-f", "rawvideo",
+        "-"
     ]
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL), width, height
 
-wf_proc, frame_width, frame_height = start_wfrecorder_capture()
+ffmpeg_proc, frame_width, frame_height = start_pipewire_capture()
 
 last_sent = 0
 while True:
     try:
-        raw_frame = wf_proc.stdout.read(frame_width * frame_height * 4)  # XRGB = 4 bytes per pixel
+        raw_frame = ffmpeg_proc.stdout.read(frame_width * frame_height * 4)  # bgr0 = 4 bytes per pixel
         if not raw_frame:
-            log("No frame received from wf-recorder")
+            log("No frame received from pipewire")
             time.sleep(1)
             continue
 
         frame = np.frombuffer(raw_frame, np.uint8).reshape((frame_height, frame_width, 4))
-        frame = frame[:, :, :3]  # drop alpha channel
+        frame = frame[:, :, :3]
     except Exception:
         log("Error reading frame:\n" + traceback.format_exc())
         time.sleep(2)
