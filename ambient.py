@@ -4,7 +4,7 @@ import requests
 import time
 import os
 import traceback
-from PIL import ImageGrab  
+import subprocess
 
 HA_URL = os.environ.get("HA_URL")
 HA_TOKEN = os.environ.get("HA_TOKEN")
@@ -50,21 +50,37 @@ def get_average_color(frame, min_saturation=40, boost=1.2):
     avg = valid.mean(axis=0)
     avg = np.clip(avg * boost, 0, 255)
 
-    return tuple(map(int, avg)) 
+    return tuple(map(int, avg))
 
-def grab_frame():
-    try:
-        img = ImageGrab.grab() 
-        frame = np.array(img)[:, :, ::-1] 
-        return frame
-    except Exception:
-        log("Error creating Screenshot:\n" + traceback.format_exc())
-        return None
+def start_ffmpeg_capture(width=1920, height=1080, display=":0.0"):
+    cmd = [
+        "ffmpeg",
+        "-f", "x11grab",
+        "-video_size", f"{width}x{height}",
+        "-i", display,
+        "-pix_fmt", "bgr24",
+        "-vcodec", "rawvideo",
+        "-an", "-sn",
+        "-f", "rawvideo",
+        "-"
+    ]
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+ffmpeg_proc = start_ffmpeg_capture()
+frame_width, frame_height = 1920, 1080
 
 last_sent = 0
 while True:
-    frame = grab_frame()
-    if frame is None:
+    try:
+        raw_frame = ffmpeg_proc.stdout.read(frame_width * frame_height * 3)
+        if not raw_frame:
+            log("No frame received from ffmpeg")
+            time.sleep(1)
+            continue
+
+        frame = np.frombuffer(raw_frame, np.uint8).reshape((frame_height, frame_width, 3))
+    except Exception:
+        log("Error reading frame:\n" + traceback.format_exc())
         time.sleep(2)
         continue
 
