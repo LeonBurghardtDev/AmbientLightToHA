@@ -63,24 +63,45 @@ def start_pipewire_capture(width=1280, height=800):
         "-f", "rawvideo",
         "-"
     ]
-    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL), width, height
+    try:
+        return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL), width, height
+    except Exception:
+        return None, width, height
+
+def grab_grim():
+    try:
+        result = subprocess.run(["grim", "-"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5)
+        img_data = np.frombuffer(result.stdout, np.uint8)
+        frame = cv2.imdecode(img_data, cv2.IMREAD_COLOR)
+        return frame
+    except Exception:
+        log("Error using grim:\n" + traceback.format_exc())
+        return None
 
 ffmpeg_proc, frame_width, frame_height = start_pipewire_capture()
+use_grim = False
 
 last_sent = 0
 while True:
-    try:
-        raw_frame = ffmpeg_proc.stdout.read(frame_width * frame_height * 4)  # bgr0 = 4 bytes per pixel
-        if not raw_frame:
-            log("No frame received from pipewire")
-            time.sleep(1)
-            continue
+    frame = None
 
-        frame = np.frombuffer(raw_frame, np.uint8).reshape((frame_height, frame_width, 4))
-        frame = frame[:, :, :3]
-    except Exception:
-        log("Error reading frame:\n" + traceback.format_exc())
-        time.sleep(2)
+    if not use_grim and ffmpeg_proc:
+        raw_frame = ffmpeg_proc.stdout.read(frame_width * frame_height * 4)
+        if raw_frame:
+            try:
+                frame = np.frombuffer(raw_frame, np.uint8).reshape((frame_height, frame_width, 4))
+                frame = frame[:, :, :3]
+            except Exception:
+                log("Error reshaping pipewire frame:\n" + traceback.format_exc())
+        else:
+            log("No frame received from pipewire, switching to grim fallback")
+            use_grim = True
+
+    if use_grim:
+        frame = grab_grim()
+
+    if frame is None:
+        time.sleep(1)
         continue
 
     b, g, r = get_average_color(frame)
