@@ -17,6 +17,7 @@ headers = {
 }
 
 def send_to_ha(r, g, b):
+    """Sendet RGB-Wert an Home Assistant."""
     data = {
         "state": f"{r},{g},{b}",
         "attributes": {
@@ -28,8 +29,8 @@ def send_to_ha(r, g, b):
     }
     try:
         requests.post(HA_URL, headers=headers, json=data, timeout=2)
-    except Exception as e:
-        print("Fehler beim Senden:", e)
+    except:
+        pass  
 
 def get_average_color(frame, min_saturation=40, boost=1.2):
     small = cv2.resize(frame, (160, 90))
@@ -43,29 +44,30 @@ def get_average_color(frame, min_saturation=40, boost=1.2):
     avg = valid.mean(axis=0)
     avg = np.clip(avg * boost, 0, 255)
 
-    return tuple(map(int, avg))  # (B, G, R)
+    return tuple(map(int, avg)) 
 
-sct = mss.mss()
-monitor = sct.monitors[1]  # 1 = Hauptmonitor
+def get_screen():
+    while True:
+        try:
+            sct = mss.mss()
+            monitor = sct.monitors[1]  
+            return sct, monitor
+        except:
+            time.sleep(5)
+
+sct, monitor = get_screen()
 
 last_sent = 0
 while True:
-    screenshot = np.array(sct.grab(monitor))
-    frame = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
+    try:
+        screenshot = np.array(sct.grab(monitor))
+        frame = cv2.cvtColor(screenshot, cv2.COLOR_BGRA2BGR)
+    except:
+        sct, monitor = get_screen()
+        continue
 
     b, g, r = get_average_color(frame)
 
     if time.time() - last_sent > 1:
         send_to_ha(r, g, b)
         last_sent = time.time()
-        print("Gesendet:", r, g, b)
-
-    cv2.imshow("Frame", cv2.resize(frame, (640, 360)))
-    color_preview = np.zeros((100, 100, 3), np.uint8)
-    color_preview[:] = (b, g, r)
-    cv2.imshow("Ambilight Color", color_preview)
-
-    if cv2.waitKey(1) == 27:
-        break
-
-cv2.destroyAllWindows()
